@@ -2,8 +2,14 @@ from flask import Flask
 from db import init_db
 from flask_cors import CORS
 from routes.auth import auth
+from dotenv import load_dotenv
+import os
+
+
+load_dotenv()
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY','fallback_secret_key')
 CORS(app)
 
 
