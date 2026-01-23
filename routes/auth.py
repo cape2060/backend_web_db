@@ -6,6 +6,9 @@ import re
 from token_generater.token_gen import generate_pasword_reset_token
 import jwt
 from flask import current_app
+from flask_mail import Message
+from mail_server import mail
+import os
 
 
 auth = Blueprint('auth',__name__)
@@ -72,7 +75,25 @@ def request_reset():
 				return jsonify({'Status':'No user with this email'}),404
 			user_id = user[0]
 			token  = generate_pasword_reset_token(user_id)
-			return jsonify({'Status':'Reset link generated','Token':token}),200
+			
+			msg = Message(
+				subject="Password Reset Request",
+				sender=os.getenv('MAIL_USERNAME'),
+				recipients=[email],
+
+			)
+			msg.body = f"""
+Hello,
+
+Your token to reset password is:
+
+{token}
+
+If you did not request a password reset, please ignore this email.
+"""
+			mail.send(msg)
+
+			return jsonify({'Status':'Reset password email sent'}),200
 	except Exception as e:
 		return jsonify({'Status':'Reset Link Generstion Failed','error':str(e)}),500
 	
