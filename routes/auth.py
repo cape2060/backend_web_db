@@ -51,10 +51,10 @@ def login():
 		return jsonify({'Status':'Invalid email syntax'}),400
 	try:
 		with connect_db() as db:
-			cursor = db.execute("SELECT id,password FROM users WHERE email=?",(email,))
+			cursor = db.execute("SELECT id,password,name FROM users WHERE email=?",(email,))
 			user = cursor.fetchone()
 		if user and bcrypt.checkpw(password.encode(),user[1].encode()):
-			return jsonify({'Status':'Login Sucess'}),200
+			return jsonify({'Status':'Login Sucess','Username':user[2]}),200
 		else:
 			return jsonify({'Status':'Invalid Credentials'}),401
 	except Exception as e:
