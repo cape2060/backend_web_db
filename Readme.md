@@ -5,10 +5,14 @@
    ```
 2. requirement :
    ```
-    $ pip install flask flask_cors bcrypt flask_mail PyJWT python-dotenv
+    $ pip install flask flask_cors bcrypt flask_mail PyJWT python-dotenv pymysql
+   ```
+   or
+   ```
+   $ pip install -r requirements.txt
    ```
 
-3. create .env in /backend dir and there put:
+4. create .env in /backend dir and there put:
    ```
    SECRET_KEY=HELLO_WORLD
    MAIL_USERNAME=your_gmail
