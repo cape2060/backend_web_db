@@ -10,4 +10,4 @@ def generate_pasword_reset_token(user_id):
 
     }
     token = jwt.encode(payload, current_app.config['SECRET_KEY'],algorithm = 'HS256')
-    return token 
+    return token

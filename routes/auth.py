@@ -1,7 +1,7 @@
-from flask import Blueprint,request,jsonify
+from flask import Blueprint,request,jsonify,session
+import pymysql
 from db import connect_db
 import bcrypt
-import sqlite3
 import re
 from token_generater.token_gen import generate_pasword_reset_token
 import jwt
@@ -27,15 +27,21 @@ def register():
 	if not re.fullmatch(email_reg,email):
 		return jsonify({'Status':'Invalid email syntax'}),400
 	try:
-		with connect_db() as db:
-			db.execute("INSERT INTO users(name,email,password) VALUES (?,?,?)",(name,email,hash_password))
+		conn = connect_db()
+		cursor = conn.cursor(pymysql.cursors.DictCursor)
+		cursor.execute("USE Bhasabridge")
 
-			db.commit()
+		cursor.execute("INSERT INTO users(name,email,password) VALUES (%s,%s,%s)",(name,email,hash_password))
+
+		conn.commit()
+		cursor.close()
+		conn.close()
 		return jsonify({'Status':'Registered'}),201
-	except sqlite3.IntegrityError:
-		return jsonify({'Status':'User already registered'}),409
-	except Exception as e:
-		return jsonify({'Status':'Error'}),500
+	except pymysql.err.IntegrityError as e:
+		if e.args[0] == 1062:  # Duplicate entry
+			return jsonify({'Status':'User already registered'}), 409
+		else:
+			return jsonify({'Status':'Database error', 'error': str(e)}), 500
 
 
 
@@ -50,11 +56,19 @@ def login():
 	if not re.fullmatch(email_reg,email):
 		return jsonify({'Status':'Invalid email syntax'}),400
 	try:
-		with connect_db() as db:
-			cursor = db.execute("SELECT id,password,name FROM users WHERE email=?",(email,))
-			user = cursor.fetchone()
-		if user and bcrypt.checkpw(password.encode(),user[1].encode()):
-			return jsonify({'Status':'Login Sucess','Username':user[2]}),200
+		conn = connect_db()
+		cursor = conn.cursor(pymysql.cursors.DictCursor)
+		cursor.execute("USE Bhasabridge")
+
+		cursor.execute("SELECT id,password,name FROM users WHERE email=%s",(email,))
+		user = cursor.fetchone()
+		cursor.close()
+		conn.close()
+
+		if user and bcrypt.checkpw(password.encode(),user['password'].encode()):
+			session['user_id'] = user['id']
+			session['user_name'] = user['name']
+			return jsonify({'Status':'Login Sucess','Username':user['name']}),200
 		else:
 			return jsonify({'Status':'Invalid Credentials'}),401
 	except Exception as e:
@@ -68,21 +82,27 @@ def request_reset():
 	if not re.fullmatch(email_reg,email):
 		return jsonify({'Status':'Invalid Email Syntax'}),400
 	try:
-		with connect_db() as db:
-			cursor = db.execute("SELECT id FROM USERS WHERE email=?",(email,))
-			user = cursor.fetchone()
-			if not user:
-				return jsonify({'Status':'No user with this email'}),404
-			user_id = user[0]
-			token  = generate_pasword_reset_token(user_id)
+		conn = connect_db()
+		cursor = conn.cursor(pymysql.cursors.DictCursor)
+		cursor.execute("USE Bhasabridge")
+
+		cursor.execute("SELECT id FROM users WHERE email=%s",(email,))
+		user = cursor.fetchone()
+		if not user:
 			
-			msg = Message(
-				subject="Password Reset Request",
+			return jsonify({'Status':'No user with this email'}),404
+		cursor.close()
+		conn.close()
+		user_id = user['id']
+		token  = generate_pasword_reset_token(user_id)
+		
+		msg = Message(
+			subject="Password Reset Request",
 				sender=os.getenv('MAIL_USERNAME'),
 				recipients=[email],
 
 			)
-			msg.body = f"""
+		msg.body = f"""
 Hello,
 
 Your token to reset password is:
@@ -91,9 +111,9 @@ Your token to reset password is:
 
 If you did not request a password reset, please ignore this email.
 """
-			mail.send(msg)
+		mail.send(msg)
 
-			return jsonify({'Status':'Reset password email sent'}),200
+		return jsonify({'Status':'Reset password email sent'}),200
 	except Exception as e:
 		return jsonify({'Status':'Reset Link Generstion Failed','error':str(e)}),500
 	
@@ -115,9 +135,14 @@ def reset_pasword():
 	user_id = payload['user_id']
 	hash_password = bcrypt.hashpw(new_password.encode(),bcrypt.gensalt()).decode()
 	try:
-		with connect_db() as db:
-			db.execute("UPDATE users SET password=? WHERE id=?",(hash_password, user_id))
-			db.commit()
+		conn = connect_db()
+		cursor = conn.cursor(pymysql.cursors.DictCursor)
+		cursor.execute("USE Bhasabridge")
+
+		cursor.execute("UPDATE users SET password=%s WHERE id=%s",(hash_password, user_id))
+		conn.commit()
+		cursor.close()
+		conn.close()
 		return jsonify({'Status':'Password Reset Sucess'}),200
 	except Exception as e:
 		return jsonify({'Status':'Password RESET Failed'}),500
