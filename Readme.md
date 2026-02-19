@@ -23,5 +23,5 @@
    ```
 6. Run the app:
    ```
-   python app.py
+   $ python app.py
    ```
