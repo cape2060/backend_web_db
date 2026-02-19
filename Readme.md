@@ -25,3 +25,12 @@
    ```
    $ python app.py
    ```
+7. To test register and login in command prompt using curl:
+   ### Register
+   ```
+   $ curl -X POST http://localhost:5000/api/register -H "Content-Type: application/json" -d "{\"Name\":\"Hello\",\"Email Id\":\"hell@ball.com\",\"Password\":\"123123\"}"
+   ```
+   ### Login
+   ```
+   $ curl -X POST http://localhost:5000/api/login -H "Content-Type: application/json" -d "{\"Email Id\":\"hell@ball.com\",\"Password\":\"123123\"}"
+   ```
