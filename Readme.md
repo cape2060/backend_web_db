@@ -21,4 +21,7 @@
    DB_USER=root
    DB_PASSWORD=your password for root user
    ```
-6. python app.py
+6. Run the app:
+   ```
+   python app.py
+   ```
