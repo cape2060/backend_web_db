@@ -15,11 +15,11 @@
 4. create .env in /backend dir and there put:
    ```
    SECRET_KEY=HELLO_WORLD
-   MAIL_USERNAME=your_gmail
-   MAIL_PASSWORD=your_app_password_from_gmail
+   MAIL_USERNAME=your_gmail(change with actual gmail)
+   MAIL_PASSWORD=your_app_password_from_gmail(change with actual app password)
    DB_HOST=localhost
    DB_USER=root
-   DB_PASSWORD=your password for root user
+   DB_PASSWORD=your password for root user(change with mysql root password)
    ```
 6. Run the app:
    ```
