@@ -2,6 +2,7 @@ from flask import Flask
 from db import init_db
 from flask_cors import CORS
 from routes.auth import auth
+from routes.progress import progress
 from dotenv import load_dotenv
 from mail_server import init_mail
 import os
@@ -24,8 +25,9 @@ try:
 except pymysql.err.OperationalError as e:
     print("Database connection failed:", e)
 
-app.register_blueprint(auth,url_prefix='/api')
-app.register_blueprint(quiz,url_prefix='/api')
+app.register_blueprint(auth,     url_prefix='/api')
+app.register_blueprint(quiz,     url_prefix='/api')
+app.register_blueprint(progress, url_prefix='/api')
 
 if __name__ == '__main__':
 	app.run(debug=True)

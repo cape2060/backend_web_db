@@ -6,68 +6,435 @@ import random
 
 quiz = Blueprint('quiz',__name__)
 
-@quiz.route('/get_quiz/<level>',methods=['GET'])
-@login_required
-def get_quiz(level):
-    if 'user_id' not in session:
-        return jsonify({'Status':'unauthorized'}),401
-    if level not in ['beginner','moderate','hard']:
-        return jsonify({'Status':'Invalid level'}),400
+VALID_LESSON_LEVELS = ['easy', 'intermediate', 'hard']
+VALID_ITEM_TYPES = ['word', 'sentence']
+VALID_OPTIONS = ['A', 'B', 'C', 'D']
+
+
+def _is_admin(cursor, user_id):
+    cursor.execute('SELECT role FROM users WHERE id=%s', (user_id,))
+    user = cursor.fetchone()
+    return bool(user and user.get('role') == 'admin')
+
+
+def _validate_lesson_payload(data):
+    required_fields = ['level', 'item_type', 'english_text', 'newari_text']
+    for field in required_fields:
+        if field not in data or not str(data[field]).strip():
+            return f'{field} is required'
+    if data['level'] not in VALID_LESSON_LEVELS:
+        return 'level must be easy, intermediate, or hard'
+    if data['item_type'] not in VALID_ITEM_TYPES:
+        return 'item_type must be word or sentence'
+    return None
+
+
+def _validate_quiz_payload(data):
+    required_fields = [
+        'level', 'question_text', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option'
+    ]
+    for field in required_fields:
+        if field not in data or not str(data[field]).strip():
+            return f'{field} is required'
+    if data['level'] not in VALID_LESSON_LEVELS:
+        return 'level must be easy, intermediate, or hard'
+    if str(data['correct_option']).upper() not in VALID_OPTIONS:
+        return 'correct_option must be A, B, C, or D'
+    return None
+
+@quiz.route('/lessons', methods=['GET'])
+def list_lessons():
+    level = request.args.get('level')
+    item_type = request.args.get('item_type')
+    limit = int(request.args.get('limit', 50))
+    offset = int(request.args.get('offset', 0))
+
+    filters = []
+    params = []
+    if level:
+        filters.append('level=%s')
+        params.append(level)
+    if item_type:
+        filters.append('item_type=%s')
+        params.append(item_type)
+
+    where_clause = f"WHERE {' AND '.join(filters)}" if filters else ''
+
+    conn = connect_db()
     try:
-        conn = connect_db()
         cursor = conn.cursor(pymysql.cursors.DictCursor)
         cursor.execute('USE Bhasabridge')
-        cursor.execute('SELECT * FROM quiz_questions WHERE level=%s',(level,))
-        question = cursor.fetchall()
-        question = random.sample(question,min(5,len(question)))
-        q_data = []
-        for q in question:
-            q_data.append({
-                'id':q['id'],
-                'question':q['question'],
-                'options': [q['option1'],q['option2'],q['option3'],q['option4']]
-            })
+        query = f'''
+            SELECT id, level, item_type, english_text, newari_text, romanized_text, source_url, created_at, updated_at
+            FROM lesson
+            {where_clause}
+            ORDER BY FIELD(level, 'easy', 'intermediate', 'hard'), id ASC
+            LIMIT %s OFFSET %s
+        '''
+        params.extend([limit, offset])
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return jsonify(rows), 200
+    finally:
         cursor.close()
         conn.close()
-        return jsonify({'Status':'Success','level':level,'questions':q_data}),200
-    except Exception as e:
-        return jsonify({'Status':'Error'}),500
 
-@quiz.route('/submit',methods=['POST'])
-@login_required
-def submit():
-    if 'user_id' not in session:
-        return jsonify({'Status':'unauthorized'}),401
-    data = request.json
-    
-    answers = data.get('answers')
-    user_id = session['user_id']
 
-    score = {}
-
+@quiz.route('/lessons/<int:lesson_id>', methods=['GET'])
+def get_lesson_by_id(lesson_id):
+    conn = connect_db()
     try:
-        conn = connect_db()
         cursor = conn.cursor(pymysql.cursors.DictCursor)
         cursor.execute('USE Bhasabridge')
-        for qid, ans in answers.items():
-            cursor.execute('SELECT level,correct_answer FROM quiz_questions WHERE id=%s',(qid,))
-            q = cursor.fetchone()
-            if q:
-                level = q['level']
-                if level not in score:
-                    score[level] = {'score':0,'total':0}
-                score[level]['total'] += 1
-                if ans == q['correct_answer']:
-                    score[level]['score'] += 1
-        for l,s in score.items():
-            cursor.execute('INSERT INTO quiz_results(user_id,level,score,total_questions) VALUES (%s,%s,%s,%s)',(user_id,l,s['score'],s['total']))
+        cursor.execute(
+            '''
+            SELECT id, level, item_type, english_text, newari_text, romanized_text, source_url, created_at, updated_at
+            FROM lesson
+            WHERE id=%s
+            ''',
+            (lesson_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'Status': 'Lesson not found'}), 404
+        return jsonify(row), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@quiz.route('/admin/lessons', methods=['POST'])
+@login_required
+def add_lesson_admin():
+    data = request.json or {}
+    error = _validate_lesson_payload(data)
+    if error:
+        return jsonify({'Status': error}), 400
+
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        if not _is_admin(cursor, session['user_id']):
+            return jsonify({'Status': 'forbidden'}), 403
+
+        cursor.execute(
+            '''
+            INSERT INTO lesson (level, item_type, english_text, newari_text, romanized_text, source_url)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ''',
+            (
+                data['level'],
+                data['item_type'],
+                data['english_text'].strip(),
+                data['newari_text'].strip(),
+                (data.get('romanized_text') or '').strip() or None,
+                (data.get('source_url') or 'https://www.easynepalityping.com/useful-newari-phrases').strip(),
+            ),
+        )
         conn.commit()
+        return jsonify({'Status': 'Lesson added', 'id': cursor.lastrowid}), 201
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'Status': 'Error', 'error': str(e)}), 400
+    finally:
         cursor.close()
         conn.close()
-        return jsonify({'Status':'Success','score':score}),200
+
+
+@quiz.route('/admin/lessons/<int:lesson_id>', methods=['PUT'])
+@login_required
+def update_lesson_admin(lesson_id):
+    data = request.json or {}
+    error = _validate_lesson_payload(data)
+    if error:
+        return jsonify({'Status': error}), 400
+
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        if not _is_admin(cursor, session['user_id']):
+            return jsonify({'Status': 'forbidden'}), 403
+
+        cursor.execute(
+            '''
+            UPDATE lesson
+            SET level=%s, item_type=%s, english_text=%s, newari_text=%s, romanized_text=%s, source_url=%s
+            WHERE id=%s
+            ''',
+            (
+                data['level'],
+                data['item_type'],
+                data['english_text'].strip(),
+                data['newari_text'].strip(),
+                (data.get('romanized_text') or '').strip() or None,
+                (data.get('source_url') or 'https://www.easynepalityping.com/useful-newari-phrases').strip(),
+                lesson_id,
+            ),
+        )
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({'Status': 'Lesson not found'}), 404
+        conn.commit()
+        return jsonify({'Status': 'Lesson updated'}), 200
     except Exception as e:
-        return jsonify({'Status':'Error'}),500
-    
-            
+        conn.rollback()
+        return jsonify({'Status': 'Error', 'error': str(e)}), 400
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@quiz.route('/admin/lessons/<int:lesson_id>', methods=['DELETE'])
+@login_required
+def delete_lesson_admin(lesson_id):
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        if not _is_admin(cursor, session['user_id']):
+            return jsonify({'Status': 'forbidden'}), 403
+
+        cursor.execute('DELETE FROM lesson WHERE id=%s', (lesson_id,))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({'Status': 'Lesson not found'}), 404
+        conn.commit()
+        return jsonify({'Status': 'Lesson deleted'}), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@quiz.route('/quizzes', methods=['GET'])
+def list_quizzes():
+    level = request.args.get('level')
+    lesson_id = request.args.get('lesson_id')
+    limit = int(request.args.get('limit', 50))
+    offset = int(request.args.get('offset', 0))
+
+    filters = []
+    params = []
+    if level:
+        filters.append('q.level=%s')
+        params.append(level)
+    if lesson_id:
+        filters.append('q.lesson_id=%s')
+        params.append(int(lesson_id))
+
+    where_clause = f"WHERE {' AND '.join(filters)}" if filters else ''
+
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        query = f'''
+            SELECT q.id, q.level, q.lesson_id, l.english_text AS lesson_english_text,
+                   q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
+                   q.correct_option, q.explanation, q.source_url, q.created_at, q.updated_at
+            FROM quiz q
+            LEFT JOIN lesson l ON l.id=q.lesson_id
+            {where_clause}
+            ORDER BY FIELD(q.level, 'easy', 'intermediate', 'hard'), q.id ASC
+            LIMIT %s OFFSET %s
+        '''
+        params.extend([limit, offset])
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return jsonify(rows), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@quiz.route('/quizzes/<int:quiz_id>', methods=['GET'])
+def get_quiz_by_id(quiz_id):
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        cursor.execute(
+            '''
+            SELECT q.id, q.level, q.lesson_id, l.english_text AS lesson_english_text,
+                   q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
+                   q.correct_option, q.explanation, q.source_url, q.created_at, q.updated_at
+            FROM quiz q
+            LEFT JOIN lesson l ON l.id=q.lesson_id
+            WHERE q.id=%s
+            ''',
+            (quiz_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'Status': 'Quiz not found'}), 404
+        return jsonify(row), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@quiz.route('/admin/quizzes', methods=['POST'])
+@login_required
+def add_quiz_admin():
+    data = request.json or {}
+    error = _validate_quiz_payload(data)
+    if error:
+        return jsonify({'Status': error}), 400
+
+    lesson_id = data.get('lesson_id')
+    if lesson_id in ('', None):
+        lesson_id = None
+
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        if not _is_admin(cursor, session['user_id']):
+            return jsonify({'Status': 'forbidden'}), 403
+
+        cursor.execute(
+            '''
+            INSERT INTO quiz (
+                level, lesson_id, question_text, option_a, option_b, option_c, option_d,
+                correct_option, explanation, source_url
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''',
+            (
+                data['level'],
+                lesson_id,
+                data['question_text'].strip(),
+                data['option_a'].strip(),
+                data['option_b'].strip(),
+                data['option_c'].strip(),
+                data['option_d'].strip(),
+                str(data['correct_option']).upper(),
+                (data.get('explanation') or '').strip() or None,
+                (data.get('source_url') or 'https://www.easynepalityping.com/useful-newari-phrases').strip(),
+            ),
+        )
+        conn.commit()
+        return jsonify({'Status': 'Quiz added', 'id': cursor.lastrowid}), 201
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'Status': 'Error', 'error': str(e)}), 400
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@quiz.route('/admin/quizzes/<int:quiz_id>', methods=['PUT'])
+@login_required
+def update_quiz_admin(quiz_id):
+    data = request.json or {}
+    error = _validate_quiz_payload(data)
+    if error:
+        return jsonify({'Status': error}), 400
+
+    lesson_id = data.get('lesson_id')
+    if lesson_id in ('', None):
+        lesson_id = None
+
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        if not _is_admin(cursor, session['user_id']):
+            return jsonify({'Status': 'forbidden'}), 403
+
+        cursor.execute(
+            '''
+            UPDATE quiz
+            SET level=%s, lesson_id=%s, question_text=%s,
+                option_a=%s, option_b=%s, option_c=%s, option_d=%s,
+                correct_option=%s, explanation=%s, source_url=%s
+            WHERE id=%s
+            ''',
+            (
+                data['level'],
+                lesson_id,
+                data['question_text'].strip(),
+                data['option_a'].strip(),
+                data['option_b'].strip(),
+                data['option_c'].strip(),
+                data['option_d'].strip(),
+                str(data['correct_option']).upper(),
+                (data.get('explanation') or '').strip() or None,
+                (data.get('source_url') or 'https://www.easynepalityping.com/useful-newari-phrases').strip(),
+                quiz_id,
+            ),
+        )
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({'Status': 'Quiz not found'}), 404
+        conn.commit()
+        return jsonify({'Status': 'Quiz updated'}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'Status': 'Error', 'error': str(e)}), 400
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@quiz.route('/admin/quizzes/<int:quiz_id>', methods=['DELETE'])
+@login_required
+def delete_quiz_admin(quiz_id):
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        if not _is_admin(cursor, session['user_id']):
+            return jsonify({'Status': 'forbidden'}), 403
+
+        cursor.execute('DELETE FROM quiz WHERE id=%s', (quiz_id,))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({'Status': 'Quiz not found'}), 404
+        conn.commit()
+        return jsonify({'Status': 'Quiz deleted'}), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /api/quiz/random  – random questions (practice mode, no tracking)
+# ---------------------------------------------------------------------------
+@quiz.route('/quiz/random', methods=['GET'])
+def get_random_quiz():
+    """
+    Return random quiz questions (no session tracking).
+    Query params: level (required), count (default 5, max 20)
+    Correct answers are hidden – suitable for frontend quiz practice UI.
+    """
+    level = (request.args.get('level') or '').lower()
+    count = min(int(request.args.get('count', 5)), 20)
+
+    if level not in VALID_LESSON_LEVELS:
+        return jsonify({'Status': 'level must be easy, intermediate, or hard'}), 400
+
+    conn = connect_db()
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute('USE Bhasabridge')
+        cursor.execute(
+            '''
+            SELECT id, level, question_text,
+                   option_a, option_b, option_c, option_d
+            FROM quiz
+            WHERE level=%s
+            ORDER BY RAND()
+            LIMIT %s
+            ''',
+            (level, count),
+        )
+        rows = cursor.fetchall()
+        return jsonify({'level': level, 'count': len(rows), 'questions': rows}), 200
+    finally:
+        cursor.close()
+        conn.close()
+
 
 
