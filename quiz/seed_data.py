@@ -46,9 +46,9 @@ LESSON_SEED_DATA = [
     {'level': 'intermediate', 'item_type': 'word', 'english_text': 'Yesterday', 'newari_text': 'म्हिग', 'romanized_text': 'mhig'},
     {'level': 'intermediate', 'item_type': 'word', 'english_text': 'Now', 'newari_text': 'आ', 'romanized_text': 'aa'},
     {'level': 'intermediate', 'item_type': 'word', 'english_text': 'Twenty', 'newari_text': '२० - नीदँ', 'romanized_text': '20 - needan'},
-    {'level': 'intermediate', 'item_type': 'word', 'english_text': 'Fifty', 'newari_text': '५० - न्यासः', 'romanized_text': '50 - nyaasah'},
+    {'level': 'intermediate', 'item_type': 'word', 'english_text': 'Fifty', 'newari_text': '५० - नेर्का', 'romanized_text': '50 - nerka'},
     {'level': 'intermediate', 'item_type': 'word', 'english_text': 'One hundred', 'newari_text': '१०० - सच्छि', 'romanized_text': '100 - sachchhi'},
-    {'level': 'intermediate', 'item_type': 'word', 'english_text': 'One thousand', 'newari_text': '१,००० - छद्वः', 'romanized_text': '1,000 - chhadvah'},
+    {'level': 'intermediate', 'item_type': 'word', 'english_text': 'One thousand', 'newari_text': '१,००० - दोछी', 'romanized_text': '1,000 - dochi'},
 
     {'level': 'hard', 'item_type': 'sentence', 'english_text': 'Can you lower the price?', 'newari_text': 'छिं भाः क्वकाये फै ला ?', 'romanized_text': 'chhin bhaah kvakaaye phai la ?'},
     {'level': 'hard', 'item_type': 'sentence', 'english_text': 'Do you accept credit/debit cards?', 'newari_text': 'छिं क्रेडिट / डेबिट कार्ड स्वीकार याना ला ?', 'romanized_text': 'chhin kredit / debit kaard sveekaar yaana la ?'},
